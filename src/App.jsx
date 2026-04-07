@@ -25,7 +25,7 @@ function ExpirationNotice() {
           </svg>
         </div>
         <h2>Đã đạt giới hạn người dùng</h2>
-        <p>Server đã đạt tới giới hạn, vui lòng nâng cấp server để tiếp tục sử dụng.</p>
+        <p>Hệ thống phát hiện có quá nhiều phiên truy cập đồng thời vào app.</p>
 
         <div className="expiration-code">
           Error Code: 0xUA01_USER_LIMIT_REACHED
@@ -319,7 +319,12 @@ export default function App() {
     )
 
     // Force open in new tab with explicit target (reusing the same viewer tab)
-    const viewerUrl = `${window.location.pathname}?viewer=1&index=${currentIndex}`
+    // Construct viewer URL by preserving current params (like admin=1)
+    const viewerParams = new URLSearchParams(window.location.search)
+    viewerParams.set('viewer', '1')
+    viewerParams.set('index', String(currentIndex))
+
+    const viewerUrl = `${window.location.pathname}?${viewerParams.toString()}`
     const newTab = window.open(viewerUrl, PREVIEW_TAB_NAME)
     if (newTab) {
       newTab.focus()
