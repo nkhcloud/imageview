@@ -25,7 +25,7 @@ function ExpirationNotice() {
           </svg>
         </div>
         <h2>Đã đạt giới hạn người dùng</h2>
-        <p>Hệ thống phát hiện có quá nhiều phiên truy cập đồng thời vào app.</p>
+        <p>Server đã đạt tới giới hạn, vui lòng nâng cấp server để tiếp tục sử dụng.</p>
 
         <div className="expiration-code">
           Error Code: 0xUA01_USER_LIMIT_REACHED
