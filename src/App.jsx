@@ -26,7 +26,6 @@ function ExpirationNotice() {
         </div>
         <h2>Đã đạt giới hạn người dùng</h2>
         <p>Hệ thống phát hiện có quá nhiều phiên truy cập đồng thời vào app.</p>
-
         <div className="expiration-code">
           Error Code: 0xUA01_USER_LIMIT_REACHED
         </div>
@@ -146,8 +145,8 @@ function createImageRecord(file, indexSeed, overrideName = null) {
 }
 
 export default function App() {
-  const params = new URLSearchParams(window.location.search)
-  const isAdmin = params.get('admin') === '1'
+  const urlParams = new URLSearchParams(window.location.search)
+  const isAdmin = urlParams.get('admin') === '1'
 
   // Viewer mode with free panning and zoom at cursor
   const initialRouteState = getViewerRouteState()
@@ -171,6 +170,7 @@ export default function App() {
   })
   const viewerStageRef = useRef(null)
   const viewerDragRef = useRef(null)
+  const lastFitScaleRef = useRef(1)
   const isViewerMode = initialRouteState.isViewer
 
   useEffect(() => {
@@ -189,7 +189,23 @@ export default function App() {
   const [hasSavedFolder, setHasSavedFolder] = useState(false)
   const [showReloadPrompt, setShowReloadPrompt] = useState(false)
   const [showBoxes, setShowBoxes] = useState(false)
+  const [showSearchTip, setShowSearchTip] = useState(false)
   const imagesRef = useRef([])
+
+  useEffect(() => {
+    // Cache busting: Force reload if a new build is detected
+    const currentBuild = typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : null;
+    if (currentBuild) {
+      const lastBuild = localStorage.getItem('last_build_date');
+      if (lastBuild && lastBuild !== String(currentBuild)) {
+        console.log("New build detected! Reloading to clear cache...");
+        localStorage.setItem('last_build_date', String(currentBuild));
+        window.location.reload(true);
+      } else {
+        localStorage.setItem('last_build_date', String(currentBuild));
+      }
+    }
+  }, []);
 
   const [visibleCount, setVisibleCount] = useState(50)
 
@@ -288,6 +304,15 @@ export default function App() {
     }
   }, [isViewerMode, viewerImages, viewerIndex, images])
 
+  useEffect(() => {
+    if (isViewerMode) {
+      console.log("Viewer Mode Active - Search Banner Triggered");
+      setShowSearchTip(true);
+      const hideTimer = setTimeout(() => setShowSearchTip(false), 10000);
+      return () => clearTimeout(hideTimer);
+    }
+  }, [isViewerMode])
+
 
 
   function openImageInNewTab(image) {
@@ -319,12 +344,11 @@ export default function App() {
     )
 
     // Force open in new tab with explicit target (reusing the same viewer tab)
-    // Construct viewer URL by preserving current params (like admin=1)
-    const viewerParams = new URLSearchParams(window.location.search)
-    viewerParams.set('viewer', '1')
-    viewerParams.set('index', String(currentIndex))
-
-    const viewerUrl = `${window.location.pathname}?${viewerParams.toString()}`
+    const nextParams = new URLSearchParams()
+    nextParams.set('viewer', '1')
+    nextParams.set('index', String(currentIndex))
+    if (isAdmin) nextParams.set('admin', '1')
+    const viewerUrl = `${window.location.pathname}?${nextParams.toString()}`
     const newTab = window.open(viewerUrl, PREVIEW_TAB_NAME)
     if (newTab) {
       newTab.focus()
@@ -388,12 +412,31 @@ export default function App() {
       const fit = getFitState(activeImage.width, activeImage.height, stage)
       viewerTxRef.current = fit
       setViewerTx(fit)
+      lastFitScaleRef.current = fit.scale
     } else {
       const reset = { scale: 1, panX: 0, panY: 0 }
       viewerTxRef.current = reset
       setViewerTx(reset)
+      lastFitScaleRef.current = 1
     }
   }
+
+  // Handle maintaining zoom vs resetting to fit when switching images
+  useEffect(() => {
+    if (!isViewerMode) return
+
+    const currentScale = viewerTxRef.current.scale
+    const isAtFitScale = Math.abs(currentScale - lastFitScaleRef.current) < 0.01
+
+    if (isAtFitScale) {
+      // If we were at fit scale on the previous image, reset to fit on the new image
+      resetViewerZoom()
+    } else {
+      // If we are zoomed in/out, maintain current transformation
+      // but we might want to ensure the new image's dimensions are reflected if they changed
+      // (This is primarily handled by the container's width/height in render)
+    }
+  }, [viewerIndex])
 
   useEffect(() => {
     if (!isViewerMode) {
@@ -516,8 +559,49 @@ export default function App() {
     const activeImage = hasImages ? displayImages[Math.min(Math.max(viewerIndex, 0), displayImages.length - 1)] : null
 
     return (
-      <main className="viewer-shell">
+      <main className="viewer-shell" style={{ position: 'relative', overflow: 'hidden' }}>
         {!isAdmin && <ExpirationNotice />}
+        {showSearchTip && (
+          <div className="search-banner" style={{
+            width: '100%',
+            background: 'linear-gradient(90deg, #f59e0b, #d97706)',
+            color: 'white',
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            zIndex: 99999,
+            gap: '15px',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+            fontWeight: 'bold',
+            fontSize: '1rem',
+          }}>
+            <span>💡Tìm bằng id/frame</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSearchTip(false);
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '4px 12px',
+                cursor: 'pointer',
+                color: 'white',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                transition: 'all 0.2s'
+              }}
+            >
+              Đã hiểu
+            </button>
+          </div>
+        )}
         {showReloadPrompt && (
           <div className="reload-overlay" style={{
             position: 'fixed',
@@ -702,13 +786,41 @@ export default function App() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => {
-                    const query = e.target.value;
+                    const query = e.target.value.trim();
                     setSearchQuery(query);
-                    if (query) {
-                      const foundIndex = displayImages.findIndex(img => img.name.toLowerCase().includes(query.toLowerCase()));
-                      if (foundIndex !== -1 && foundIndex !== viewerIndex) {
-                        setViewerIndex(foundIndex);
+                    if (!query) return;
+
+                    const displayImages = images.length > 0 ? images : viewerImages;
+                    const currentAnnotations = images.length > 0 ? annotations : viewerAnnotations;
+                    let foundIndex = -1;
+
+                    // 1. Try to find by Exact ID from annotations XML
+                    const isNumeric = /^\d+$/.test(query);
+                    if (isNumeric) {
+                      const foundKey = Object.keys(currentAnnotations.images).find(k => {
+                        const ann = currentAnnotations.images[k];
+                        return ann && ann.id !== null && ann.id.toString() === query;
+                      });
+
+                      if (foundKey) {
+                        // Found a filename in XML with this ID, now find its index in our current image list
+                        const cleanKey = foundKey.toLowerCase().split('/').pop();
+                        foundIndex = displayImages.findIndex(img => {
+                          const imgName = img.name.toLowerCase();
+                          return imgName === foundKey.toLowerCase() || imgName.endsWith(cleanKey);
+                        });
                       }
+                    }
+
+                    // 2. Fallback to simple name inclusion search if not found by ID
+                    if (foundIndex === -1) {
+                      foundIndex = displayImages.findIndex(img =>
+                        img.name.toLowerCase().includes(query.toLowerCase())
+                      );
+                    }
+
+                    if (foundIndex !== -1 && foundIndex !== viewerIndex) {
+                      setViewerIndex(foundIndex);
                     }
                   }}
                   onKeyDown={(e) => {
@@ -792,73 +904,12 @@ export default function App() {
         if (req !== 'granted') return
       }
 
-      if (handle.kind === 'directory') {
-        await readDirectoryHandle(handle)
-      } else if (handle.kind === 'file') {
-        await readZipHandle(handle)
-      }
+      await readZipHandle(handle)
     } catch (err) {
       console.error(err)
     }
   }
 
-  async function readDirectoryHandle(dirHandle) {
-    setIsLoading(true)
-    imagesRef.current.forEach((image) => URL.revokeObjectURL(image.url))
-    setImages([])
-    setAnnotations({ labels: {}, images: {} })
-    const imageData = []
-    let annotationFile = null
-    try {
-      async function traverse(handle, currentPath = '') {
-        for await (const entry of handle.values()) {
-          if (entry.kind === 'file') {
-            if (entry.name.match(/\.(png|jpg|jpeg|gif|webp|bmp)$/i)) {
-              const file = await entry.getFile()
-              imageData.push({ file, name: currentPath + entry.name })
-            } else if (entry.name === 'annotations.xml') {
-              annotationFile = await entry.getFile()
-            }
-          } else if (entry.kind === 'directory') {
-            await traverse(entry, currentPath + entry.name + '/')
-          }
-        }
-      }
-      await traverse(dirHandle, dirHandle.name + '/')
-
-      if (annotationFile) {
-        const text = await annotationFile.text()
-        const parsed = parseAnnotations(text)
-        setAnnotations(parsed)
-      }
-
-
-      imageData.sort((a, b) => a.name.localeCompare(b.name))
-      if (!imageData.length) return
-      const nextRecords = imageData.map((data, index) =>
-        createImageRecord(data.file, `${Date.now()}-${index}`, data.name)
-      )
-      startTransition(() => {
-        setImages(nextRecords)
-      })
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setIsLoading(false)
-      setLoadDone(true)
-    }
-  }
-
-  async function openPicker() {
-    try {
-      const handle = await window.showDirectoryPicker({ id: 'image-folder', mode: 'read' })
-      await setFolderHandle(handle)
-      setHasSavedFolder(true)
-      await readDirectoryHandle(handle)
-    } catch (err) {
-      if (err.name !== 'AbortError') console.error(err)
-    }
-  }
 
   async function readZipHandle(fileHandle) {
     setIsLoading(true)
@@ -985,9 +1036,6 @@ export default function App() {
       <main className="page">
         <section className="hero-panel">
           <div className="hero-actions">
-            <button type="button" className="primary-btn" onClick={openPicker}>
-              Chọn Folder
-            </button>
             <button type="button" className="primary-btn" onClick={openZipPicker}>
               Chọn file ZIP
             </button>
@@ -1009,8 +1057,8 @@ export default function App() {
               gap: '16px'
             }}>
               <div>
-                <strong style={{ display: 'block', color: 'white' }}>Phát hiện dữ liệu ảnh cũ (Folder/ZIP)!</strong>
-                <span style={{ fontSize: '0.9em', color: 'rgba(255,255,255,0.7)' }}>Bạn có muốn khôi phục lại dữ liệu này không? (Trình duyệt sẽ yêu cầu quyền đọc)</span>
+                <strong style={{ display: 'block', color: 'white' }}>Phát hiện dữ liệu ZIP cũ!</strong>
+                <span style={{ fontSize: '0.9em', color: 'rgba(255,255,255,0.7)' }}>Bạn có muốn khôi phục lại file ZIP này không? (Trình duyệt sẽ yêu cầu quyền đọc)</span>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="button" className="primary-btn" onClick={reloadFolder}>
